@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CertScan — Certificate Extractor</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #7c6aff;
+    --accent2: #ff6a9b;
+    --accent3: #6affd4;
+    --text: #f0f0f8;
+    --muted: #6b6b88;
+    --success: #4ade80;
+    --error: #f87171;
+    --warn: #fbbf24;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,106,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,106,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Glowing orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.25;
+  }
+  .orb1 { width: 400px; height: 400px; background: var(--accent); top: -100px; left: -100px; }
+  .orb2 { width: 300px; height: 300px; background: var(--accent2); bottom: -50px; right: 100px; }
+  .orb3 { width: 200px; height: 200px; background: var(--accent3); top: 50%; right: -50px; }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 56px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .logo-icon {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  .logo-text {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .api-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .api-status:hover { border-color: var(--accent); }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .dot.offline { background: var(--error); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 36px;
+    animation: fadeDown 0.6s 0.1s ease both;
+    width: fit-content;
+  }
+
+  .tab {
+    padding: 10px 22px;
+    border-radius: 9px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .tab.active {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(124,106,255,0.35);
+  }
+
+  .tab:not(.active):hover { color: var(--text); background: var(--surface2); }
+
+  /* Panel */
+  .panel { display: none; animation: fadeUp 0.4s ease both; }
+  .panel.active { display: block; }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 56px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(124,106,255,0.05), rgba(255,106,155,0.05));
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 40px rgba(124,106,255,0.15);
+  }
+
+  .upload-zone:hover::before, .upload-zone.dragover::before { opacity: 1; }
+
+  .upload-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+    filter: grayscale(0.3);
+  }
+
+  .upload-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .upload-sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+
+  .chip {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--muted);
+    margin: 3px;
+    letter-spacing: 0.5px;
+  }
+
+  input[type="file"] { display: none; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 26px;
+    border-radius: 10px;
+    border: none;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 20px rgba(124,106,255,0.4);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(124,106,255,0.5); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+
+  .btn-sm { padding: 8px 16px; font-size: 12px; }
+
+  /* File preview list */
+  .file-list {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .file-icon { font-size: 20px; flex-shrink: 0; }
+
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .file-remove {
+    width: 26px; height: 26px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .file-remove:hover { background: rgba(248,113,113,0.1); border-color: var(--error); color: var(--error); }
+
+  .actions { margin-top: 24px; display: flex; gap: 12px; align-items: center; }
+
+  /* Progress */
+  .progress-wrap {
+    margin-top: 16px;
+    display: none;
+  }
+  .progress-wrap.show { display: block; }
+  .progress-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .progress-bar-bg {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.4s ease;
+    position: relative;
+  }
+  .progress-bar::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0;
+    width: 40px; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4));
+    animation: shimmer 1s infinite;
+  }
+
+  /* Result card */
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-top: 28px;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .result-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .badge-success { background: rgba(74,222,128,0.12); color: var(--success); border: 1px solid rgba(74,222,128,0.2); }
+  .badge-error { background: rgba(248,113,113,0.12); color: var(--error); border: 1px solid rgba(248,113,113,0.2); }
+  .badge-accent { background: rgba(124,106,255,0.12); color: var(--accent); border: 1px solid rgba(124,106,255,0.2); }
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .result-field {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  .result-field:nth-child(even) { border-right: none; }
+  .result-field:nth-last-child(-n+2) { border-bottom: none; }
+
+  .field-label {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .field-value {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .field-value.null-val { color: var(--muted); font-style: italic; font-size: 12px; }
+
+  .tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+  .tag {
+    padding: 3px 10px;
+    background: rgba(106,255,212,0.08);
+    border: 1px solid rgba(106,255,212,0.15);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--accent3);
+  }
+
+  /* Confidence meter */
+  .confidence-wrap { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .conf-bar-bg { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .conf-bar { height: 100%; border-radius: 3px; transition: width 1s ease; }
+  .conf-label { font-size: 12px; font-weight: 600; min-width: 36px; text-align: right; }
+
+  /* Records table */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .table-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .table-actions { display: flex; gap: 8px; align-items: center; }
+
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    transition: border-color 0.2s;
+  }
+  .search-box:focus-within { border-color: var(--accent); }
+  .search-box input {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    width: 180px;
+  }
+  .search-box input::placeholder { color: var(--muted); }
+
+  .filter-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 8px 12px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    font-weight: 500;
+  }
+  .data-table td {
+    padding: 14px 16px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr:hover td { background: rgba(124,106,255,0.04); }
+  .data-table .empty-row td { text-align: center; color: var(--muted); padding: 40px; }
+
+  .cat-badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* Toast */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    animation: slideIn 0.3s ease both;
+    max-width: 320px;
+  }
+  .toast.success { border-color: rgba(74,222,128,0.3); }
+  .toast.error { border-color: rgba(248,113,113,0.3); }
+
+  /* Bulk results */
+  .bulk-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .stat-num {
+    font-family: 'Syne', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 0.5px; }
+
+  .bulk-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .bulk-item:hover { border-color: var(--accent); }
+  .bulk-item-info { flex: 1; }
+  .bulk-item-name { font-size: 13px; margin-bottom: 3px; }
+  .bulk-item-meta { font-size: 11px; color: var(--muted); }
+
+  /* Animations */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes shimmer {
+    from { transform: translateX(-40px); }
+    to { transform: translateX(40px); }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .result-grid { grid-template-columns: 1fr; }
+    .result-field { border-right: none !important; }
+    .bulk-summary { grid-template-columns: repeat(3, 1fr); }
+    .table-actions { flex-wrap: wrap; gap: 6px; }
+    .search-box input { width: 120px; }
+  }
+
+  .category-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
+
+  /* Multi-label category pills */
+  .multilabel-wrap {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    grid-column: 1 / -1;
+  }
+  .multilabel-group { margin-bottom: 14px; }
+  .multilabel-group:last-child { margin-bottom: 0; }
+  .multilabel-group-title {
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .multilabel-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ml-pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid;
+    transition: transform 0.15s;
+  }
+  .ml-pill:hover { transform: scale(1.05); }
+  .ml-pill.on  { background: rgba(124,106,255,0.15); color: var(--accent); border-color: rgba(124,106,255,0.35); }
+  .ml-pill.off { background: transparent; color: var(--muted); border-color: var(--border); opacity: 0.45; }
+
+  .section-label {
+    font-family: 'Syne', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📜</div>
+      <div>
+        <div class="logo-text">Cert<span>Scan</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px;">Certificate Extractor & Classifier</div>
+      </div>
+    </div>
+    <div class="api-status" onclick="checkHealth()" title="Click to check API status">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">checking api...</span>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('single')">⬆ Single Upload</button>
+    <button class="tab" onclick="switchTab('bulk')">📦 Bulk Upload</button>
+    <button class="tab" onclick="switchTab('records')">🗂 Records</button>
+  </div>
+
+  <!-- ── SINGLE UPLOAD PANEL ── -->
+  <div class="panel active" id="panel-single">
+
+    <div class="section-label">Upload Certificate</div>
+
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+      ondragover="handleDrag(event,true)" ondragleave="handleDrag(event,false)" ondrop="handleDrop(event)">
+      <span class="upload-icon">🎓</span>
+      <div class="upload-title">Drop your certificate here</div>
+      <div class="upload-sub">or click to browse files<br/>Works with scanned images and PDFs</div>
+      <div>
+        <span class="chip">PDF</span>
+        <span class="chip">JPG</span>
+        <span class="chip">PNG</span>
+        <span class="chip">WEBP</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.jpg,.jpeg,.png,.webp" onchange="handleFileSelect(event,'single')"/>
+
+    <div class="file-list" id="singleFileList"></div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="extractBtn" onclick="extractSingle()" disabled>
+        <span>✨ Extract Info</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="clearSingle()">Clear</button>
+    </div>
+
+    <div class="progress-wrap" id="singleProgress">
+      <div class="progress-label">Analysing with Gemini AI...</div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="singleBar"></div></div>
+    </div>
+
+    <div id="singleResult"></div>
+  </div>
+
+  <!-- ── BULK UPLOAD PANEL ── -->
+  <div class="panel" id="panel-bulk">
+
+    <div class="section-label">Bulk Certificate Upload</div>
+
+    <div class="upload-zone" id="dropZoneBulk" onclick="document.getElementById('bulkInput').click()"
+      ondragover="handleDrag(event,true,'dropZoneBulk')" ondragleave="handleDrag(event,false,'dropZoneBulk')" ondrop="handleDropBulk(event)">
+      <span class="upload-icon">📦</span>
+      <div class="upload-title">Drop multiple certificates</div>
+      <div class="upload-sub">Select many files at once — all will be processed together</div>
+      <div>
+        <span class="chip">PDF</span>
+        <span class="chip">JPG</span>
+        <span class="chip">PNG</span>
+        <span class="chip">WEBP</span>
+      </div>
+    </div>
+    <input type="file" id="bulkInput" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple onchange="handleFileSelect(event,'bulk')"/>
+
+    <div class="file-list" id="bulkFileList"></div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="bulkExtractBtn" onclick="extractBulk()" disabled>
+        <span>✨ Extract All</span>
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="clearBulk()">Clear</button>
+    </div>
+
+    <div class="progress-wrap" id="bulkProgress">
+      <div class="progress-label" id="bulkProgressLabel">Processing certificates...</div>
+      <div class="progress-bar-bg"><div class="progress-bar" id="bulkBar"></div></div>
+    </div>
+
+    <div id="bulkResult"></div>
+  </div>
+
+  <!-- ── RECORDS PANEL ── -->
+  <div class="panel" id="panel-records">
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-title">📋 Extracted Records</div>
+        <div class="table-actions">
+          <div class="search-box">
+            <span style="color:var(--muted);font-size:12px;">🔍</span>
+            <input type="text" id="searchInput" placeholder="search name, org..." oninput="filterTable()"/>
+          </div>
+          <select class="filter-select" id="categoryFilter" onchange="loadRecords()">
+            <option value="">All Categories</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadRecords()">↺ Refresh</button>
+          <button class="btn btn-primary btn-sm" onclick="downloadCSV()">⬇ CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="data-table" id="recordsTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Student Name</th>
+              <th>Organisation</th>
+              <th>Event</th>
+              <th>Date</th>
+              <th>Category</th>
+              <th>Type</th>
+              <th>Score</th>
+              <th>Processed</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr class="empty-row"><td colspan="9">Click Refresh to load records</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API = 'http://localhost:8000';
+let singleFile = null;
+let bulkFiles = [];
+let allRecords = [];
+
+const CAT_COLORS = {
+  'Hackathon': '#f97316',
+  'Seminar': '#a78bfa',
+  'Webinar': '#60a5fa',
+  'Workshop': '#34d399',
+  'Competition': '#f43f5e',
+  'Conference': '#fb923c',
+  'Course / MOOC': '#38bdf8',
+  'Internship': '#4ade80',
+  'Research Paper / Publication': '#e879f9',
+  'Sports / Cultural Event': '#fbbf24',
+  'Volunteer / Social Work': '#2dd4bf',
+  'Training Program': '#818cf8',
+  'Award / Achievement': '#fcd34d',
+  'Other': '#94a3b8',
+};
+
+function catColor(cat) {
+  return CAT_COLORS[cat] || `hsl(${Math.abs(hashStr(cat||'')) % 360},70%,60%)`;
+}
+function hashStr(s) { let h=0; for(let c of s) h=(h<<5)-h+c.charCodeAt(0); return h; }
+
+// ── Health check ──────────────────────────────────────────────────────────────
+async function checkHealth() {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  txt.textContent = 'checking...';
+  try {
+    const r = await fetch(`${API}/`, {signal: AbortSignal.timeout(3000)});
+    if(r.ok) {
+      dot.className = 'dot online';
+      txt.textContent = 'api online';
+    } else throw new Error();
+  } catch {
+    dot.className = 'dot offline';
+    txt.textContent = 'api offline';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 30000);
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    const names = ['single','bulk','records'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  if(name === 'records') loadRecords();
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+function handleDrag(e, on, zoneId='dropZone') {
+  e.preventDefault();
+  document.getElementById(zoneId).classList.toggle('dragover', on);
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragover');
+  const files = [...e.dataTransfer.files];
+  if(files[0]) setSingleFile(files[0]);
+}
+function handleDropBulk(e) {
+  e.preventDefault();
+  document.getElementById('dropZoneBulk').classList.remove('dragover');
+  addBulkFiles([...e.dataTransfer.files]);
+}
+
+// ── File select ───────────────────────────────────────────────────────────────
+function handleFileSelect(e, mode) {
+  if(mode === 'single') setSingleFile(e.target.files[0]);
+  else addBulkFiles([...e.target.files]);
+}
+
+function setSingleFile(file) {
+  if(!isAllowed(file)) { showToast('Unsupported file type. Use PDF, JPG, PNG or WEBP.', 'error'); return; }
+  singleFile = file;
+  const list = document.getElementById('singleFileList');
+  list.innerHTML = fileItemHTML(file, 0, 'single');
+  document.getElementById('extractBtn').disabled = false;
+  document.getElementById('singleResult').innerHTML = '';
+}
+
+function addBulkFiles(files) {
+  const valid = files.filter(isAllowed);
+  if(valid.length < files.length) showToast(`${files.length-valid.length} unsupported file(s) skipped.`, 'error');
+  bulkFiles = [...bulkFiles, ...valid];
+  renderBulkList();
+  document.getElementById('bulkExtractBtn').disabled = bulkFiles.length === 0;
+}
+
+function isAllowed(file) {
+  return /\.(pdf|jpg|jpeg|png|webp)$/i.test(file.name);
+}
+
+function fileItemHTML(file, idx, mode) {
+  const icon = file.name.endsWith('.pdf') ? '📄' : '🖼️';
+  const size = (file.size / 1024).toFixed(1) + ' KB';
+  return `<div class="file-item">
+    <span class="file-icon">${icon}</span>
+    <div class="file-info">
+      <div class="file-name">${file.name}</div>
+      <div class="file-size">${size}</div>
+    </div>
+    <button class="file-remove" onclick="removeFile(${idx},'${mode}')" title="Remove">✕</button>
+  </div>`;
+}
+
+function renderBulkList() {
+  const list = document.getElementById('bulkFileList');
+  list.innerHTML = bulkFiles.map((f,i) => fileItemHTML(f,i,'bulk')).join('');
+}
+
+function removeFile(idx, mode) {
+  if(mode === 'single') { singleFile=null; document.getElementById('singleFileList').innerHTML=''; document.getElementById('extractBtn').disabled=true; }
+  else { bulkFiles.splice(idx,1); renderBulkList(); document.getElementById('bulkExtractBtn').disabled=bulkFiles.length===0; }
+}
+
+function clearSingle() {
+  singleFile=null;
+  document.getElementById('singleFileList').innerHTML='';
+  document.getElementById('extractBtn').disabled=true;
+  document.getElementById('singleResult').innerHTML='';
+  document.getElementById('singleProgress').classList.remove('show');
+  document.getElementById('fileInput').value='';
+}
+function clearBulk() {
+  bulkFiles=[];
+  document.getElementById('bulkFileList').innerHTML='';
+  document.getElementById('bulkExtractBtn').disabled=true;
+  document.getElementById('bulkResult').innerHTML='';
+  document.getElementById('bulkProgress').classList.remove('show');
+  document.getElementById('bulkInput').value='';
+}
+
+// ── Single Extract ────────────────────────────────────────────────────────────
+async function extractSingle() {
+  if(!singleFile) return;
+  const btn = document.getElementById('extractBtn');
+  const prog = document.getElementById('singleProgress');
+  const bar = document.getElementById('singleBar');
+  const resultEl = document.getElementById('singleResult');
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div><span>Analysing...</span>';
+  prog.classList.add('show');
+  resultEl.innerHTML = '';
+
+  // Fake progress animation
+  let pct = 0;
+  const ticker = setInterval(() => { pct = Math.min(pct+3, 85); bar.style.width=pct+'%'; }, 150);
+
+  const fd = new FormData();
+  fd.append('file', singleFile);
+
+  try {
+    const res = await fetch(`${API}/extract`, { method: 'POST', body: fd });
+    clearInterval(ticker); bar.style.width='100%';
+    if(!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Extraction failed');
+    }
+    const data = await res.json();
+    setTimeout(() => { prog.classList.remove('show'); bar.style.width='0%'; }, 600);
+    resultEl.innerHTML = buildResultCard(data);
+    animateConfBar();
+    showToast('Certificate extracted successfully!', 'success');
+  } catch(e) {
+    clearInterval(ticker); bar.style.width='0%';
+    prog.classList.remove('show');
+    resultEl.innerHTML = `<div class="result-card" style="padding:24px;color:var(--error);">❌ ${e.message}</div>`;
+    showToast(e.message, 'error');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<span>✨ Extract Info</span>';
+}
+
+// Category groups for organised display
+const CAT_GROUPS = {
+  '🗓 Event Format':        ['hackathon','competition','seminar','webinar','workshop','conference','bootcamp','symposium','expo','summit'],
+  '🎓 Academic / Learning': ['course_mooc','training_program','internship','research','publication','thesis','academic_excellence'],
+  '💻 Technology':          ['technology','artificial_intelligence','cybersecurity','data_science','web_development','robotics','iot','cloud_computing','blockchain','software_engineering','hardware_electronics'],
+  '🔬 Science':             ['science','mathematics','physics','chemistry','biology','environmental_science'],
+  '💼 Business & Finance':  ['business','finance','entrepreneurship','marketing','management','economics','accounting','stock_market'],
+  '🎨 Arts & Design':       ['arts','design','photography','music','dance','theatre_drama','film_media','creative_writing','architecture'],
+  '⚽ Sports & Fitness':    ['sports','fitness_yoga','martial_arts','esports_gaming'],
+  '🤝 Social & Humanitarian':['social_work','ngo_volunteering','community_service','disaster_relief','education_outreach'],
+  '🏥 Health & Medical':    ['healthcare','first_aid','mental_health','nutrition'],
+  '⚖️ Law & Policy':        ['law','public_policy','human_rights'],
+  '🗣 Language & Comms':    ['language_learning','public_speaking','debate','journalism'],
+  '🌟 Leadership & Skills': ['leadership','teamwork','communication_skills','personality_development','project_management'],
+  '🏆 Achievement Type':    ['winner_1st','runner_up','participation','appreciation','scholarship','award_honour','certification_completion'],
+};
+
+function buildMultiLabelSection(labels) {
+  if(!labels || !Object.keys(labels).length) return '';
+  let html = '<div class="multilabel-wrap"><div class="field-label" style="margin-bottom:14px">MULTI-LABEL CATEGORIES</div>';
+  for(const [groupName, cats] of Object.entries(CAT_GROUPS)) {
+    const relevant = cats.filter(c => labels[`cat_${c}`] !== undefined);
+    if(!relevant.length) continue;
+    const hasAnyOn = relevant.some(c => labels[`cat_${c}`] === 1);
+    html += `<div class="multilabel-group">
+      <div class="multilabel-group-title">${groupName}</div>
+      <div class="multilabel-pills">`;
+    relevant.forEach(c => {
+      const isOn = labels[`cat_${c}`] === 1;
+      const label = c.replace(/_/g,' ');
+      html += `<span class="ml-pill ${isOn?'on':'off'}" title="${isOn?'Detected':'Not detected'}">${isOn?'✓ ':''}${label}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function buildResultCard(d) {
+  const conf = d.confidence_score ?? 0;
+  const confColor = conf > 0.7 ? 'var(--success)' : conf > 0.4 ? 'var(--warn)' : 'var(--error)';
+  const tags = Array.isArray(d.suggested_tags) ? d.suggested_tags : [];
+  const pc = d.primary_category || d.category || 'Unknown';
+  const catColor2 = catColor(pc);
+
+  return `<div class="result-card">
+    <div class="result-header">
+      <div class="result-title">
+        📋 Extracted Info
+        <span class="badge badge-success">✓ Saved to CSV</span>
+        <span class="badge" style="background:${catColor2}20;color:${catColor2};border:1px solid ${catColor2}40;">
+          <span class="category-dot" style="background:${catColor2}"></span>${pc}
+        </span>
+      </div>
+      <span style="font-size:11px;color:var(--muted);">ID: ${d.id}</span>
+    </div>
+    <div class="result-grid">
+      ${field('Student Name', d.student_name)}
+      ${field('Organisation', d.organisation)}
+      ${field('Event Name', d.event_name)}
+      ${field('Certificate Type', d.certificate_type)}
+      ${field('Event Date', d.event_date)}
+      ${field('Issue Date', d.issue_date)}
+      ${field('Duration', d.duration)}
+      <div class="result-field">
+        <div class="field-label">Confidence Score</div>
+        <div class="confidence-wrap">
+          <div class="conf-bar-bg">
+            <div class="conf-bar" id="confBar" data-val="${conf}" style="width:0%;background:${confColor}"></div>
+          </div>
+          <span class="conf-label" style="color:${confColor}">${Math.round(conf*100)}%</span>
+        </div>
+      </div>
+      <div class="result-field" style="grid-column:1/-1">
+        <div class="field-label">Description</div>
+        <div class="field-value">${d.description || '<span class="null-val">not found</span>'}</div>
+      </div>
+      <div class="result-field" style="grid-column:1/-1">
+        <div class="field-label">Tags</div>
+        <div class="tags-wrap">
+          ${tags.length ? tags.map(t=>`<span class="tag">${t}</span>`).join('') : '<span class="null-val">no tags</span>'}
+        </div>
+      </div>
+      ${buildMultiLabelSection(d.category_labels)}
+    </div>
+  </div>`;
+}
+
+function field(label, val) {
+  const display = val ? `<span class="field-value">${val}</span>` : `<span class="field-value null-val">not found</span>`;
+  return `<div class="result-field"><div class="field-label">${label}</div>${display}</div>`;
+}
+
+function animateConfBar() {
+  setTimeout(() => {
+    const bar = document.getElementById('confBar');
+    if(bar) bar.style.width = (parseFloat(bar.dataset.val)*100) + '%';
+  }, 200);
+}
+
+// ── Bulk Extract ──────────────────────────────────────────────────────────────
+async function extractBulk() {
+  if(!bulkFiles.length) return;
+  const btn = document.getElementById('bulkExtractBtn');
+  const prog = document.getElementById('bulkProgress');
+  const bar = document.getElementById('bulkBar');
+  const label = document.getElementById('bulkProgressLabel');
+  const resultEl = document.getElementById('bulkResult');
+
+  btn.disabled=true;
+  btn.innerHTML='<div class="spinner"></div><span>Processing...</span>';
+  prog.classList.add('show');
+  resultEl.innerHTML='';
+
+  let pct=0;
+  const ticker = setInterval(()=>{ pct=Math.min(pct+2,85); bar.style.width=pct+'%'; },200);
+
+  const fd = new FormData();
+  bulkFiles.forEach(f => fd.append('files', f));
+
+  try {
+    const res = await fetch(`${API}/extract/bulk`,{method:'POST',body:fd});
+    clearInterval(ticker); bar.style.width='100%';
+    if(!res.ok) { const e=await res.json(); throw new Error(e.detail||'Bulk extraction failed'); }
+    const data = await res.json();
+    setTimeout(()=>{ prog.classList.remove('show'); bar.style.width='0%'; },600);
+    resultEl.innerHTML = buildBulkResult(data);
+    showToast(`Processed ${data.total} certificates — ${data.successful} successful.`, data.failed>0?'error':'success');
+  } catch(e) {
+    clearInterval(ticker); bar.style.width='0%';
+    prog.classList.remove('show');
+    resultEl.innerHTML=`<div class="result-card" style="padding:24px;color:var(--error);">❌ ${e.message}</div>`;
+    showToast(e.message,'error');
+  }
+
+  btn.disabled=false;
+  btn.innerHTML='<span>✨ Extract All</span>';
+}
+
+function buildBulkResult(d) {
+  const successColor = 'var(--success)', failColor = 'var(--error)';
+  let html = `<div style="margin-top:28px;">
+    <div class="section-label">Bulk Results</div>
+    <div class="bulk-summary">
+      <div class="stat-card"><div class="stat-num">${d.total}</div><div class="stat-label">TOTAL</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:${successColor}">${d.successful}</div><div class="stat-label">SUCCESSFUL</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:${d.failed>0?failColor:'var(--muted)'}">${d.failed}</div><div class="stat-label">FAILED</div></div>
+    </div>`;
+
+  d.results.forEach(r => {
+    const ok = r.status==='success';
+    const name = ok ? (r.data?.student_name||'—') : '—';
+    const cat = ok ? (r.data?.category||'—') : r.error;
+    const cc = catColor(r.data?.category||'');
+    html += `<div class="bulk-item">
+      <span style="font-size:20px">${ok?'✅':'❌'}</span>
+      <div class="bulk-item-info">
+        <div class="bulk-item-name">${r.filename}</div>
+        <div class="bulk-item-meta">${ok ? `👤 ${name}` : `Error: ${cat}`}</div>
+      </div>
+      ${ok ? `<span class="cat-badge" style="background:${cc}20;color:${cc};border:1px solid ${cc}40">${r.data.category||'—'}</span>` : ''}
+    </div>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Records Table ─────────────────────────────────────────────────────────────
+async function loadRecords() {
+  const cat = document.getElementById('categoryFilter').value;
+  const url = `${API}/records?limit=200${cat?`&category=${encodeURIComponent(cat)}`:''}`;
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '<tr class="empty-row"><td colspan="9"><div class="spinner" style="margin:0 auto"></div></td></tr>';
+
+  try {
+    const res = await fetch(url);
+    if(!res.ok) throw new Error();
+    const data = await res.json();
+    allRecords = data.records || [];
+    populateCategoryFilter(allRecords);
+    renderTable(allRecords);
+  } catch {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9" style="color:var(--error)">Failed to load — is the API running?</td></tr>';
+  }
+}
+
+function populateCategoryFilter(records) {
+  const sel = document.getElementById('categoryFilter');
+  const current = sel.value;
+  const cats = [...new Set(records.map(r=>r.category).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All Categories</option>' + cats.map(c=>`<option value="${c}" ${c===current?'selected':''}>${c}</option>`).join('');
+}
+
+function renderTable(records) {
+  const tbody = document.getElementById('tableBody');
+  if(!records.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No records found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.map(r => {
+    const cc = catColor(r.category);
+    const date = r.processed_at ? new Date(r.processed_at).toLocaleDateString() : '—';
+    const conf = r.confidence_score ? Math.round(r.confidence_score*100)+'%' : '—';
+    return `<tr>
+      <td><span style="color:var(--muted);font-size:11px">${r.id||'—'}</span></td>
+      <td><b>${r.student_name||'—'}</b></td>
+      <td>${r.organisation||'—'}</td>
+      <td>${r.event_name||'—'}</td>
+      <td>${r.event_date||r.issue_date||'—'}</td>
+      <td><span class="cat-badge" style="background:${cc}20;color:${cc};border:1px solid ${cc}40">${r.category||'—'}</span></td>
+      <td><span style="color:var(--muted);font-size:11px">${r.certificate_type||'—'}</span></td>
+      <td><span style="color:${parseFloat(r.confidence_score)>0.7?'var(--success)':parseFloat(r.confidence_score)>0.4?'var(--warn)':'var(--muted)'}">${conf}</span></td>
+      <td><span style="color:var(--muted);font-size:11px">${date}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = allRecords.filter(r =>
+    (r.student_name||'').toLowerCase().includes(q) ||
+    (r.organisation||'').toLowerCase().includes(q) ||
+    (r.event_name||'').toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+}
+
+async function downloadCSV() {
+  try {
+    const res = await fetch(`${API}/download/csv`);
+    if(!res.ok) throw new Error('No CSV available');
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'extracted_certificates.csv';
+    a.click();
+    showToast('CSV downloaded!', 'success');
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const container = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span>${type==='success'?'✅':'❌'}</span><span>${msg}</span>`;
+  container.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity 0.4s'; setTimeout(()=>t.remove(),400); }, 3500);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Streamlit Frontend Dependencies
+# AMU Course Registration System
+
+# Core
+streamlit==1.30.0
+
+# HTTP Client
+requests==2.31.0
+
+# Data Processing
+pandas==2.1.4
+
+# Visualization
+plotly==5.18.0
+
+# UI Components
+
+# File Upload
+python-multipart==0.0.6

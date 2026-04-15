@@ -1,0 +1,9 @@
+@echo off
+echo Starting Backend...
+cd backend
+echo Checking database...
+if not exist database.db (
+    echo Database not found. Running initialization...
+    python -c "from database import init_db; init_db()"
+)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000

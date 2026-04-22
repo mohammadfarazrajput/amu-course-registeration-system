@@ -178,11 +178,15 @@ class EligibilityAgent:
         
         # Retrieve relevant ordinance context
         context = ""
-        
-        if risk_level == "CRITICAL":
-            context = retriever.retrieve_promotion_rules()
-        elif can_advance:
-            context = retriever.retrieve_advancement_rules()
+
+        try:
+            if risk_level == "CRITICAL":
+                context = retriever.retrieve_promotion_rules()
+            elif can_advance:
+                context = retriever.retrieve_advancement_rules()
+        except Exception as rag_err:
+            print(f"⚠️ RAG retrieval failed (vector store may not be built yet): {rag_err}")
+            context = ""
         
         if not context or len(context) < 50:
             # Fallback to rule-based recommendations

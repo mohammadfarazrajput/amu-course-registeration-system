@@ -6,7 +6,7 @@ Coordinates all agents for intelligent registration flow
 import os
 from typing import Dict
 from sqlalchemy.orm import Session
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from services.retriever import retriever
 from agents.verification_agent import VerificationAgent
 from agents.eligibility_agent import create_eligibility_agent
@@ -30,13 +30,13 @@ class RegistrationOrchestrator:
         self.registration_agent = create_registration_agent(db)
         
         # Initialize LLM for chat
-        api_key = os.getenv("GEMINI_API_KEY")
-        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+        api_key = os.getenv("GROQ_API_KEY")
+        model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         
         try:
-            self.llm = ChatGoogleGenerativeAI(
+            self.llm = ChatGroq(
                 model=model,
-                google_api_key=api_key,
+                groq_api_key=api_key,
                 temperature=0.3
             )
         except Exception as e:
@@ -92,32 +92,36 @@ class RegistrationOrchestrator:
             return "general"
     
     def _handle_eligibility_query(self, student_id: int, student_data: Dict, message: str) -> Dict:
-        """Handle eligibility-related queries"""
-        # Get eligibility analysis
+        """Handle eligibility-related queries — LLM interprets ordinances + student context."""
         eligibility = self.eligibility_agent.analyze_eligibility(student_id)
-        
-        # Retrieve relevant ordinances
-        rag_result = retriever.retrieve_context(message, top_k=2)
-        
-        # Generate response using LLM
-        prompt = f"""You are an academic advisor for AMU students.
 
-Student: {student_data['name']}
-Semester: {student_data['current_semester']}
-CGPA: {student_data['cgpa']}
-Credits: {student_data['total_earned_credits']}
+        # RAG — safe, won't crash if vector store is empty
+        rag_result = {"context": "", "sources": []}
+        try:
+            rag_result = retriever.retrieve_context(message, top_k=2)
+        except Exception as e:
+            print(f"⚠️ RAG retrieval skipped: {e}")
 
-Eligibility Status:
-{eligibility}
+        rag_section = f"\n\nRelevant AMU Ordinances:\n{rag_result['context']}" if rag_result['context'] else ""
 
-Relevant AMU Ordinances:
-{rag_result['context']}
+        prompt = f"""You are an academic advisor for AMU ZHCET students. Be concise (max 5 sentences).
 
-Student Question: {message}
+Student: {student_data['name']} | Sem {student_data['current_semester']} | CGPA {student_data['cgpa']} | Credits {student_data['total_earned_credits']}
+Status: {eligibility.get('status')} | Backlogs: {eligibility.get('backlog_count', 0)} | Risk: {eligibility.get('risk_level')}
+Allowed registrations: {', '.join(eligibility.get('allowed_registration_types', []))}
+{rag_section}
 
-Provide a clear, helpful answer based on the student's eligibility and AMU ordinances.
-Be concise and supportive."""
-        
+Student question: {message}
+
+Answer directly and helpfully."""
+
+        if not self.llm:
+            return {
+                "response": f"Status: {eligibility.get('status')}. CGPA: {eligibility['cgpa']}, Credits: {eligibility['total_earned_credits']}, Backlogs: {eligibility.get('backlog_count', 0)}.",
+                "context": eligibility,
+                "sources": rag_result['sources']
+            }
+
         try:
             response = self.llm.invoke(prompt)
             return {
@@ -125,61 +129,75 @@ Be concise and supportive."""
                 "context": eligibility,
                 "sources": rag_result['sources']
             }
-        except:
+        except Exception as e:
+            print(f"❌ LLM error in eligibility handler: {e}")
             return {
-                "response": f"Based on your current status, you have {eligibility['total_earned_credits']} credits and CGPA {eligibility['cgpa']}. Check the eligibility page for details.",
+                "response": f"Your status: {eligibility.get('status')}. CGPA: {eligibility['cgpa']}, Credits: {eligibility['total_earned_credits']}, Backlogs: {eligibility.get('backlog_count', 0)}. Check the eligibility page for full details.",
                 "context": eligibility,
                 "sources": []
             }
     
     def _handle_course_query(self, student_id: int, student_data: Dict, message: str) -> Dict:
-        """Handle course-related queries"""
-        # Get eligibility first
+        """Handle course-related queries — no LLM, pure data formatting."""
         eligibility = self.eligibility_agent.analyze_eligibility(student_id)
-        
-        # Get course recommendations
         courses = self.course_selector.recommend_courses(student_id, eligibility)
-        
-        # Generate response
-        current_count = len(courses['courses']['current'])
-        backlog_count = len(courses['courses']['backlogs'])
-        advance_count = len(courses['courses']['advance'])
-        
-        response_text = f"""Based on your current status:
 
-📚 Current Semester Courses: {current_count} available
-"""
-        
-        if backlog_count > 0:
-            response_text += f"⚠️ Backlog Courses: {backlog_count} to clear\n"
-        
-        if advance_count > 0:
-            response_text += f"🚀 Advancement Courses: {advance_count} available\n"
-        
-        response_text += f"\nTotal Credits: {courses['total_credits']}/40"
-        
+        current = courses['courses']['current']
+        backlogs = courses['courses']['backlogs']
+        advance = courses['courses']['advance']
+
+        lines = [f"Here's your course summary for Semester {eligibility['current_semester']}:\n"]
+        lines.append(f"Current Semester: {len(current)} course(s) available")
+        for c in current[:5]:
+            lines.append(f"  - {c.get('course_code','?')} {c.get('course_name','?')} ({c.get('credits','?')} cr)")
+
+        if backlogs:
+            lines.append(f"\nBacklogs: {len(backlogs)} course(s) to clear")
+            for c in backlogs[:5]:
+                lines.append(f"  - {c.get('course_code','?')} {c.get('course_name','?')} ({c.get('credits','?')} cr)")
+
+        if advance:
+            lines.append(f"\nAdvancement: {len(advance)} course(s) available (next semester)")
+            for c in advance[:3]:
+                lines.append(f"  - {c.get('course_code','?')} {c.get('course_name','?')} ({c.get('credits','?')} cr)")
+
+        lines.append(f"\nTotal registerable credits: {courses['total_credits']}/40")
+
+        if eligibility.get('warnings'):
+            lines.append("\nWarnings:")
+            for w in eligibility['warnings']:
+                lines.append(f"  - {w}")
+
         return {
-            "response": response_text,
+            "response": "\n".join(lines),
             "context": courses,
             "sources": []
         }
-    
     def _handle_ordinance_query(self, message: str) -> Dict:
-        """Handle ordinance/rule queries"""
-        # Retrieve relevant ordinances
-        rag_result = retriever.retrieve_context(message, top_k=3)
-        
-        # Generate response
-        prompt = f"""You are an AMU academic policy expert.
+        """Handle ordinance/rule queries — RAG + LLM."""
+        rag_result = {"context": "", "sources": []}
+        try:
+            rag_result = retriever.retrieve_context(message, top_k=3)
+        except Exception as e:
+            print(f"⚠️ RAG retrieval skipped: {e}")
 
-Student Question: {message}
+        if not self.llm:
+            return {
+                "response": rag_result['context'][:600] if rag_result['context'] else "Ordinance retrieval unavailable.",
+                "context": None,
+                "sources": rag_result['sources']
+            }
 
-Relevant AMU B.Tech Ordinances (2023-24):
-{rag_result['context']}
+        rag_section = rag_result['context'] if rag_result['context'] else "No ordinance documents indexed yet."
+        prompt = f"""You are an AMU B.Tech academic policy expert. Be concise and cite clauses.
 
-Provide a clear explanation based on the ordinances above.
-Cite specific clauses when relevant."""
-        
+Question: {message}
+
+AMU Ordinances (2023-24):
+{rag_section}
+
+Answer in 3-5 sentences max."""
+
         try:
             response = self.llm.invoke(prompt)
             return {
@@ -187,35 +205,38 @@ Cite specific clauses when relevant."""
                 "context": None,
                 "sources": rag_result['sources']
             }
-        except:
+        except Exception as e:
+            print(f"❌ LLM error in ordinance handler: {e}")
             return {
-                "response": rag_result['context'][:500] + "...",
+                "response": rag_section[:600] if rag_section else "Unable to retrieve ordinance information.",
                 "context": None,
                 "sources": rag_result['sources']
             }
     
     def _handle_general_query(self, student_data: Dict, message: str) -> Dict:
-        """Handle general queries"""
-        prompt = f"""You are a helpful academic assistant for AMU students.
-
-Student: {student_data['name']}
-Branch: {student_data['branch']}
-Semester: {student_data['current_semester']}
-
-Question: {message}
-
-Provide a helpful response."""
-        
-        try:
-            response = self.llm.invoke(prompt)
+        """Handle general queries."""
+        if not self.llm:
             return {
-                "response": response.content,
+                "response": "I can help with eligibility, courses, ordinances, and registration rules. Try asking something specific!",
                 "context": None,
                 "sources": []
             }
-        except:
+
+        prompt = f"""You are a helpful academic assistant for AMU ZHCET students. Be concise.
+
+Student: {student_data['name']} | Branch: {student_data['branch']} | Sem {student_data['current_semester']}
+
+Question: {message}
+
+Answer in 3-4 sentences."""
+
+        try:
+            response = self.llm.invoke(prompt)
+            return {"response": response.content, "context": None, "sources": []}
+        except Exception as e:
+            print(f"❌ LLM error in general handler: {e}")
             return {
-                "response": "I'm here to help with course registration and AMU ordinances. Ask me about eligibility, courses, or registration rules!",
+                "response": "I can help with eligibility, courses, ordinances, and registration rules. Try asking something specific!",
                 "context": None,
                 "sources": []
             }

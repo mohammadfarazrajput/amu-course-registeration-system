@@ -1,6 +1,6 @@
 """
-Chat Page
-RAG-powered chat assistant for queries
+Chat Page - RAG-powered assistant
+LLM is used ONLY here, for interpreting student questions + ordinances.
 """
 
 import streamlit as st
@@ -8,151 +8,209 @@ from utils.session import init_session, get_student, is_logged_in
 from utils.api_client import api_client
 from utils.ui import load_css
 from components.sidebar import render_sidebar
-from components.chat_widget import render_chat_message
 
-
-# Page config
 st.set_page_config(
     page_title="Chat Assistant - AMU Registration",
     page_icon="💬",
     layout="wide"
 )
 
-# Load custom CSS
 load_css()
-
-# Initialize and check login
 init_session()
+
 if not is_logged_in():
     st.warning("⚠️ Please login first")
     st.page_link("app.py", label="Go to Login", icon="🔐")
     st.stop()
 
-# Render sidebar
 render_sidebar()
-
-# Get student data
 student = get_student()
 
-# Page header
-st.title("💬 Chat Assistant")
-st.markdown("Ask questions about courses, eligibility, ordinances, and more!")
-st.markdown("---")
+# ── Chat UI styles ─────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.chat-wrap { display: flex; flex-direction: column; gap: 12px; padding: 8px 0; }
 
-# Initialize chat history in session state
-if 'chat_messages' not in st.session_state:
+.bubble-user {
+    align-self: flex-end;
+    background: #4f46e5;
+    color: #fff;
+    padding: 10px 15px;
+    border-radius: 18px 18px 4px 18px;
+    max-width: 75%;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.bubble-bot {
+    align-self: flex-start;
+    background: #1e1e2e;
+    color: #e2e2f0;
+    border: 1px solid #2e2e45;
+    padding: 10px 15px;
+    border-radius: 18px 18px 18px 4px;
+    max-width: 80%;
+    font-size: 14px;
+    line-height: 1.6;
+}
+.bubble-label {
+    font-size: 11px;
+    color: #6b7280;
+    margin-bottom: 2px;
+}
+.sources-box {
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: #111827;
+    border-left: 3px solid #4f46e5;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #9ca3af;
+}
+.intent-chip {
+    display: inline-block;
+    background: #1e1e2e;
+    border: 1px solid #3f3f60;
+    color: #a5b4fc;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    margin-bottom: 6px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Header ─────────────────────────────────────────────────────────────────────
+st.title("💬 AI Chat Assistant")
+st.caption(
+    "Ask about eligibility, ordinances, registration rules, or your courses. "
+    "AI is used here to interpret your questions — not for data lookups."
+)
+st.divider()
+
+# ── Session state ──────────────────────────────────────────────────────────────
+if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 
-# Display chat history
-chat_container = st.container()
+# ── Render chat history ────────────────────────────────────────────────────────
+chat_area = st.container()
 
-with chat_container:
+with chat_area:
     if not st.session_state.chat_messages:
-        st.info("""
-        👋 **Hi! I'm your AI assistant.**
-        
-        I can help you with:
-        - ✅ Eligibility questions
-        - 📚 Course recommendations
-        - 📖 AMU ordinances and rules
-        - 🎓 Registration procedures
-        - 📊 Academic requirements
-        
-        **Try asking:**
-        - "What are the promotion requirements?"
-        - "Can I advance to final year?"
-        - "Explain registration mode B"
-        - "What courses should I take?"
-        """)
+        st.markdown("""
+        <div style="padding: 20px; background: #1e1e2e; border-radius: 12px; border: 1px solid #2e2e45;">
+            <div style="font-size:15px; font-weight:600; color:#e2e2f0; margin-bottom:10px;">
+                👋 Hi, I'm your AMU Registration Assistant
+            </div>
+            <div style="font-size:13px; color:#9ca3af; line-height:1.8;">
+                I can help you with:<br>
+                &nbsp;&nbsp;• Eligibility and promotion requirements<br>
+                &nbsp;&nbsp;• AMU ordinance clauses and rules<br>
+                &nbsp;&nbsp;• Registration modes (A / B / C)<br>
+                &nbsp;&nbsp;• Course advancement criteria<br>
+                &nbsp;&nbsp;• Backlog and credit queries
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        # Display chat history
+        html_parts = ['<div class="chat-wrap">']
         for msg in st.session_state.chat_messages:
-            render_chat_message(msg['content'], msg['is_user'])
+            if msg["is_user"]:
+                html_parts.append(f'''
+                <div style="display:flex;flex-direction:column;align-items:flex-end;">
+                    <div class="bubble-label">You</div>
+                    <div class="bubble-user">{msg["content"]}</div>
+                </div>''')
+            else:
+                sources_html = ""
+                if msg.get("sources"):
+                    src_list = "".join(f"<div>• {s}</div>" for s in msg["sources"])
+                    sources_html = f'<div class="sources-box">📚 Sources:<br>{src_list}</div>'
 
-st.markdown("---")
+                intent_html = ""
+                if msg.get("intent"):
+                    intent_html = f'<div class="intent-chip">#{msg["intent"]}</div><br>'
 
-# Chat input
-col1, col2 = st.columns([6, 1])
+                content = msg["content"].replace("\n", "<br>")
+                html_parts.append(f'''
+                <div style="display:flex;flex-direction:column;align-items:flex-start;">
+                    <div class="bubble-label">🤖 Assistant</div>
+                    <div class="bubble-bot">{intent_html}{content}{sources_html}</div>
+                </div>''')
 
-with col1:
+        html_parts.append("</div>")
+        st.markdown("".join(html_parts), unsafe_allow_html=True)
+
+st.divider()
+
+# ── Input row ──────────────────────────────────────────────────────────────────
+col_input, col_send = st.columns([8, 1])
+
+with col_input:
     user_input = st.text_input(
-        "Type your question...",
+        "Message",
         key="chat_input",
-        placeholder="e.g., What are the promotion requirements for semester 4?"
+        placeholder="e.g. What are the promotion rules for semester 4?",
+        label_visibility="collapsed"
     )
 
-with col2:
-    send_button = st.button("Send", type="primary", use_container_width=True)
+with col_send:
+    send = st.button("Send ➤", type="primary", use_container_width=True)
 
-# Handle message sending
-if send_button and user_input:
-    # Add user message to history
+# ── Handle send ────────────────────────────────────────────────────────────────
+if send and user_input.strip():
     st.session_state.chat_messages.append({
-        'content': user_input,
-        'is_user': True
+        "content": user_input.strip(),
+        "is_user": True
     })
-    
-    # Show loading
-    with st.spinner("🤔 Thinking..."):
-        # Call chat API
-        response = api_client.send_chat_message(
-            student.get('id'),
-            user_input
-        )
-        
-        if "error" in response:
-            assistant_message = f"❌ Error: {response['error']}"
-        else:
-            assistant_message = response.get('response', 'Sorry, I could not process that.')
-            
-            # Show sources if available
-            sources = response.get('sources', [])
-            if sources:
-                assistant_message += "\n\n📚 **Sources:**\n"
-                for source in sources:
-                    assistant_message += f"- {source}\n"
-        
-        # Add assistant response to history
-        st.session_state.chat_messages.append({
-            'content': assistant_message,
-            'is_user': False
-        })
-    
-    # Rerun to show new messages
+
+    with st.spinner("Thinking…"):
+        resp = api_client.send_chat_message(student.get("id"), user_input.strip())
+
+    if "error" in resp:
+        bot_msg = {
+            "content": f"Sorry, something went wrong: {resp['error']}",
+            "is_user": False,
+            "sources": [],
+            "intent": None
+        }
+    else:
+        bot_msg = {
+            "content": resp.get("response", "I couldn't process that request."),
+            "is_user": False,
+            "sources": resp.get("sources", []),
+            "intent": resp.get("intent")
+        }
+
+    st.session_state.chat_messages.append(bot_msg)
     st.rerun()
 
-# Quick questions
-st.markdown("---")
-st.markdown("### 💡 Quick Questions")
+# ── Quick questions ────────────────────────────────────────────────────────────
+st.markdown("**Quick questions:**")
+q_cols = st.columns(4)
+quick = [
+    ("📋 Promotion rules", "What are the promotion requirements?"),
+    ("🚀 Can I advance?", "Can I register for advanced courses?"),
+    ("📖 Registration modes", "Explain registration modes A, B, and C"),
+    ("⚠️ Backlog rules", "What happens if I fail a course?"),
+]
 
-col1, col2, col3 = st.columns(3)
+for i, (label, question) in enumerate(quick):
+    with q_cols[i]:
+        if st.button(label, use_container_width=True, key=f"quick_{i}"):
+            st.session_state.chat_messages.append({"content": question, "is_user": True})
+            with st.spinner("Thinking…"):
+                resp = api_client.send_chat_message(student.get("id"), question)
+            bot_msg = {
+                "content": resp.get("response", "Sorry, I couldn't process that."),
+                "is_user": False,
+                "sources": resp.get("sources", []),
+                "intent": resp.get("intent")
+            }
+            st.session_state.chat_messages.append(bot_msg)
+            st.rerun()
 
-with col1:
-    if st.button("📋 Promotion Requirements", use_container_width=True):
-        st.session_state.chat_messages.append({
-            'content': "What are the promotion requirements?",
-            'is_user': True
-        })
-        st.rerun()
-
-with col2:
-    if st.button("🚀 Can I Advance?", use_container_width=True):
-        st.session_state.chat_messages.append({
-            'content': "Can I register for advanced courses?",
-            'is_user': True
-        })
-        st.rerun()
-
-with col3:
-    if st.button("📖 Registration Modes", use_container_width=True):
-        st.session_state.chat_messages.append({
-            'content': "Explain registration modes A, B, and C",
-            'is_user': True
-        })
-        st.rerun()
-
-# Clear chat button
-st.markdown("---")
-if st.button("🗑️ Clear Chat History", use_container_width=False):
+# ── Clear ──────────────────────────────────────────────────────────────────────
+st.divider()
+if st.button("🗑️ Clear chat", key="clear_chat"):
     st.session_state.chat_messages = []
     st.rerun()

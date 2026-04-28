@@ -49,6 +49,7 @@ def render_sidebar():
         st.page_link("pages/3_Upload.py", label="📄 Upload Marksheet", icon="📄")
         st.page_link("pages/4_Courses.py", label="📚 Browse Courses", icon="📚")
         st.page_link("pages/5_Register.py", label="✅ Register", icon="✅")
+        st.page_link("pages/6_Certificates.py", label="🏅 Certificates", icon="🏅")
         
         st.divider()
         

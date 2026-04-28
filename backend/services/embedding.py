@@ -1,61 +1,54 @@
 """
-Embedding Service using Google Gemini
-Handles text embeddings for vector store
+Embedding Service
+Uses sentence-transformers (local, free, no API needed).
+Gemini embeddings removed — was causing failures when rate-limited.
 """
 
 import os
 from typing import List
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
 
 
 class DummyEmbeddings:
-    """Dummy embeddings for fallback"""
+    """Fallback if sentence-transformers not installed"""
+    DIM = 384
+
     def embed_query(self, text: str) -> List[float]:
-        return [0.0] * 768
-    
+        return [0.0] * self.DIM
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return [[0.0] * 768 for _ in texts]
+        return [[0.0] * self.DIM for _ in texts]
 
 
 class EmbeddingService:
-    """Singleton embedding service"""
-    
     _instance = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialize()
         return cls._instance
-    
+
     def _initialize(self):
-        """Initialize Gemini embeddings"""
         try:
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                print("⚠️ GEMINI_API_KEY not found in environment")
-                raise ValueError("API Key missing")
-            
-            self.embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/embedding-001",
-                google_api_key=api_key
-            )
-            print("✅ Gemini Embeddings initialized")
-            
+            from sentence_transformers import SentenceTransformer
+            model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+            self.model = SentenceTransformer(model_name)
+            self._use_st = True
+            print(f"✅ Embeddings: sentence-transformers ({model_name})")
         except Exception as e:
-            print(f"⚠️ Failed to initialize Gemini Embeddings: {e}")
-            print("Using DummyEmbeddings (RAG features will not work)")
-            self.embeddings = DummyEmbeddings()
-    
+            print(f"⚠️ sentence-transformers unavailable: {e} — using DummyEmbeddings")
+            self.model = DummyEmbeddings()
+            self._use_st = False
+
     def embed_text(self, text: str) -> List[float]:
-        """Embed a single text"""
-        return self.embeddings.embed_query(text)
-    
+        if self._use_st:
+            return self.model.encode(text, convert_to_numpy=True).tolist()
+        return self.model.embed_query(text)
+
     def embed_texts(self, texts: List[str]) -> List[List[float]]:
-        """Embed multiple texts"""
-        return self.embeddings.embed_documents(texts)
+        if self._use_st:
+            return self.model.encode(texts, convert_to_numpy=True).tolist()
+        return self.model.embed_documents(texts)
 
 
-# Singleton instance
 embedding_service = EmbeddingService()

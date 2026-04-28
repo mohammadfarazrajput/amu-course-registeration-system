@@ -2,7 +2,6 @@
 AMU Course Registration System - Main App
 Login Page
 """
-#imports
 
 import streamlit as st
 from utils.session import init_session, set_student, is_logged_in

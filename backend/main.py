@@ -18,7 +18,7 @@ import os
 
 # Load environment variables
 load_dotenv(Path(__file__).parent.parent / ".env")
-print("GEMINI KEY LOADED:", bool(os.getenv("GEMINI_API_KEY")))  # add this
+print("GROQ KEY LOADED:", bool(os.getenv("GROQ_API_KEY")))
 
 from schemas import (
     LoginRequest, LoginResponse,

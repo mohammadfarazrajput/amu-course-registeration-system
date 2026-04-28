@@ -82,6 +82,25 @@ class APIClient:
         except Exception:
             return {"status": "offline"}
 
+    # Certificates
+    def upload_certificate(self, student_id: int, file_bytes: bytes, filename: str, mime_type: str) -> dict:
+        """Upload a certificate for AI extraction and persistence"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/certificates/upload",
+                params={"student_id": student_id},
+                files={"file": (filename, file_bytes, mime_type)},
+                timeout=60,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            return {"error": str(e)}
+
+    def get_certificates(self, student_id: int) -> dict:
+        """Get all certificates for a student"""
+        return self._get(f"/api/certificates/{student_id}")
+
 
 # Singleton instance
 api_client = APIClient()
